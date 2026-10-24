@@ -1,5 +1,5 @@
 {
-  "version": "1.2.0",
+  "version": "1.2.1",
   "apps": [
     { "id": "writer", "name": "Writer", "icon": "pencil", "entry": "apps/writer/index.html", "w": 560, "h": 440 },
     { "id": "metronome", "name": "Metronome", "icon": "metronome", "entry": "apps/metronome/index.html", "w": 320, "h": 470 },

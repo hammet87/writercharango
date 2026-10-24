@@ -117,8 +117,8 @@ function cascade() {
 
 function createWin(id, title, o) {
   var w = { id: id, title: title, x: o.x, y: o.y, w: o.w, h: o.h, max: !!o.max, prev: o.prev || null };
-  var cb = h('button', { class: 'cb', 'aria-label': 'Close ' + title, onclick: function (e) { e.stopPropagation(); closeWin(id); } });
-  var zb = h('button', { class: 'zb', 'aria-label': 'Zoom ' + title, onclick: function (e) { e.stopPropagation(); zoom(id); } });
+  var cb = h('button', { class: 'cb', title: 'Close window', 'aria-label': 'Close ' + title, onclick: function (e) { e.stopPropagation(); closeWin(id); } });
+  var zb = h('button', { class: 'zb', title: 'Zoom: fill or restore the window', 'aria-label': 'Zoom ' + title, onclick: function (e) { e.stopPropagation(); zoom(id); } });
   var tt = h('div', { class: 'tt' }, cb, h('span', { class: 'ttl' }, title), zb);
   var body = h('div', { class: 'wbody' });
   if (o.src || o.srcdoc) {
@@ -130,7 +130,7 @@ function createWin(id, title, o) {
     body.append(f); w.iframe = f;
   } else { body.append(o.content); w.content = o.content; }
   body.append(h('div', { class: 'shield' }));
-  var gr = h('div', { class: 'grow', 'aria-label': 'Resize ' + title });
+  var gr = h('div', { class: 'grow', title: 'Drag to resize', 'aria-label': 'Resize ' + title });
   var el = h('div', { class: 'win', 'data-app': id }, tt, body, gr);
   w.el = el; wins[id] = w; stack.push(id);
   desk.append(el);
