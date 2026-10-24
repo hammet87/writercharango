@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Charango</title>
+<link rel="stylesheet" href="../../core/theme.css">
+<style>
+body{overflow:auto}
+.pad{padding:12px;display:flex;flex-direction:column;gap:12px;max-width:560px;margin:0 auto}
+.roots{display:flex;flex-wrap:wrap;gap:6px}
+.roots button{min-width:46px;padding:0 8px}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{min-width:0}
+h2{font-size:18px;margin:2px 0}
+.vs{display:flex;flex-wrap:wrap;gap:12px}
+.v{border:2px solid var(--line);padding:6px 6px 4px;text-align:center;min-width:128px}
+.v svg{display:block;margin:0 auto;color:var(--fg)}
+.v .f{font-size:13px;color:var(--dim)}
+.map{overflow-x:auto;border:2px solid var(--line)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+td,th{border:1px solid var(--line);padding:3px 5px;text-align:center;white-space:nowrap}
+th{background:var(--sel-bg);color:var(--sel-fg);font-weight:400}
+td.in{font-weight:700;background:var(--sel-bg);color:var(--sel-fg)}
+</style>
+</head>
+<body>
+<div class="pad">
+ <div class="dim">Standard tuning: G C E A E. Courses are shown in that order.</div>
+ <div class="roots" id="roots" role="group" aria-label="Chord root"></div>
+ <div class="row">
+  <select id="qual" aria-label="Chord type"></select>
+  <button id="acc" aria-label="Switch between sharps and flats">Sharps</button>
+ </div>
+ <h2 id="title"></h2>
+ <div class="vs" id="vs"></div>
+ <h2>Note map</h2>
+ <div class="dim">Chord notes are highlighted. Columns are frets.</div>
+ <div class="map"><table id="map"></table></div>
+</div>
+<script src="../../core/app.js"></script>
+<script>
+'use strict';
+var $ = function (i) { return document.getElementById(i); };
+var SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+var FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+var OPEN = [7, 0, 4, 9, 4];
+var QUAL = [
+  { k: 'maj', n: 'major', s: '', iv: [0, 4, 7] }, { k: 'min', n: 'minor', s: 'm', iv: [0, 3, 7] },
+  { k: '7', n: 'dominant 7', s: '7', iv: [0, 4, 7, 10] }, { k: 'maj7', n: 'major 7', s: 'maj7', iv: [0, 4, 7, 11] },
+  { k: 'm7', n: 'minor 7', s: 'm7', iv: [0, 3, 7, 10] }, { k: 'sus2', n: 'sus 2', s: 'sus2', iv: [0, 2, 7] },
+  { k: 'sus4', n: 'sus 4', s: 'sus4', iv: [0, 5, 7] }, { k: 'dim', n: 'diminished', s: 'dim', iv: [0, 3, 6] }
+];
+var st = { root: 0, q: 'maj', flats: false };
+var MAXFRET = 9;
+
+function voicings(root, iv) {
+  var chord = iv.map(function (i) { return (root + i) % 12; });
+  var req = iv.length >= 4 ? iv.filter(function (i) { return i !== 7; }).map(function (i) { return (root + i) % 12; }) : chord;
+  var opts = OPEN.map(function (o) {
+    var r = []; for (var f = 0; f <= MAXFRET; f++) if (chord.indexOf((o + f) % 12) >= 0) r.push(f); return r;
+  });
+  var out = [];
+  (function walk(c, cur) {
+    if (c === OPEN.length) {
+      var heard = cur.map(function (f, i) { return (OPEN[i] + f) % 12; });
+      if (!req.every(function (n) { return heard.indexOf(n) >= 0; })) return;
+      var nz = cur.filter(function (f) { return f > 0; });
+      var span = nz.length ? Math.max.apply(null, nz) - Math.min.apply(null, nz) : 0;
+      if (span > 3) return;
+      out.push({ frets: cur.slice(), span: span, max: nz.length ? Math.max.apply(null, nz) : 0, n: nz.length });
+      return;
+    }
+    opts[c].forEach(function (f) { cur.push(f); walk(c + 1, cur); cur.pop(); });
+  })(0, []);
+  out.sort(function (a, b) { return (a.max * 10 + a.n * 2 + a.span) - (b.max * 10 + b.n * 2 + b.span) || a.frets.join('').localeCompare(b.frets.join('')); });
+  return out.slice(0, 4);
+}
+function names() { return st.flats ? FLAT : SHARP; }
+
+function svgEl(tag, attrs) {
+  var e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (var k in attrs) e.setAttribute(k, attrs[k]); return e;
+}
+function diagram(v) {
+  var W = 128, H = 140, x0 = 20, dx = 22, y0 = 26, dy = 22;
+  var nz = v.frets.filter(function (f) { return f > 0; });
+  var base = nz.length && Math.min.apply(null, nz) > 1 ? Math.min.apply(null, nz) : 1;
+  var s = svgEl('svg', { width: W, height: H, viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': 'Frets ' + v.frets.join(' ') });
+  var line = function (x1, y1, x2, y2, w) { s.append(svgEl('line', { x1: x1, y1: y1, x2: x2, y2: y2, stroke: 'currentColor', 'stroke-width': w || 1.5 })); };
+  for (var c = 0; c < 5; c++) line(x0 + c * dx, y0, x0 + c * dx, y0 + 4 * dy);
+  for (var r = 0; r <= 4; r++) line(x0, y0 + r * dy, x0 + 4 * dx, y0 + r * dy, r === 0 && base === 1 ? 5 : 1.5);
+  if (base > 1) { var t = svgEl('text', { x: 1, y: y0 + dy * 0.7, 'font-size': 12, fill: 'currentColor' }); t.textContent = base; s.append(t); }
+  v.frets.forEach(function (f, c) {
+    var x = x0 + c * dx;
+    if (f === 0) s.append(svgEl('circle', { cx: x, cy: y0 - 9, r: 5, fill: 'none', stroke: 'currentColor', 'stroke-width': 2 }));
+    else s.append(svgEl('circle', { cx: x, cy: y0 + (f - base + 0.5) * dy, r: 8, fill: 'currentColor' }));
+    var lab = svgEl('text', { x: x, y: y0 + 4 * dy + 16, 'text-anchor': 'middle', 'font-size': 12, fill: 'currentColor' });
+    lab.textContent = SHARP[OPEN[c]]; s.append(lab);
+  });
+  return s;
+}
+function render() {
+  var q = QUAL.find(function (x) { return x.k === st.q; }), nm = names();
+  $('title').textContent = nm[st.root] + q.s + ' (' + nm[st.root] + ' ' + q.n + ')';
+  document.querySelectorAll('#roots button').forEach(function (b, i) { b.classList.toggle('on', i === st.root); b.textContent = nm[i]; });
+  $('acc').textContent = st.flats ? 'Flats' : 'Sharps'; $('qual').value = st.q;
+  var vs = voicings(st.root, q.iv), box = $('vs'); box.textContent = '';
+  if (!vs.length) { box.textContent = 'No easy shape found for this chord.'; }
+  vs.forEach(function (v, i) {
+    var d = document.createElement('div'); d.className = 'v';
+    d.append(diagram(v));
+    var f = document.createElement('div'); f.className = 'f'; f.textContent = 'Frets ' + v.frets.join(' ') + (i === 0 ? ' (easiest)' : '');
+    d.append(f); box.append(d);
+  });
+  var chord = q.iv.map(function (i) { return (st.root + i) % 12; });
+  var tb = $('map'); tb.textContent = '';
+  var head = document.createElement('tr'); head.append(document.createElement('th'));
+  for (var f = 0; f <= 12; f++) { var th = document.createElement('th'); th.textContent = f; head.append(th); }
+  tb.append(head);
+  OPEN.forEach(function (o) {
+    var tr = document.createElement('tr'), h = document.createElement('th'); h.textContent = nm[o]; tr.append(h);
+    for (var f = 0; f <= 12; f++) { var n = (o + f) % 12, td = document.createElement('td'); td.textContent = nm[n]; if (chord.indexOf(n) >= 0) td.className = 'in'; tr.append(td); }
+    tb.append(tr);
+  });
+  Studio.set('charango.state', st).catch(function () {});
+}
+SHARP.forEach(function (n, i) {
+  var b = document.createElement('button'); b.textContent = n;
+  b.addEventListener('click', function () { st.root = i; render(); }); $('roots').append(b);
+});
+QUAL.forEach(function (x) { var o = document.createElement('option'); o.value = x.k; o.textContent = x.n; $('qual').append(o); });
+$('qual').addEventListener('change', function () { st.q = this.value; render(); });
+$('acc').addEventListener('click', function () { st.flats = !st.flats; render(); });
+window.__ch = { voicings: voicings, OPEN: OPEN, QUAL: QUAL };
+render();
+Studio.get('charango.state', null).then(function (v) { if (v) { st = Object.assign(st, v); render(); } }).catch(function () {});
+</script>
+</body>
+</html>

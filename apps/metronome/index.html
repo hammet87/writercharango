@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Metronome</title>
+<link rel="stylesheet" href="../../core/theme.css">
+<style>
+body{overflow:auto}
+.pad{padding:14px;display:flex;flex-direction:column;gap:12px;max-width:420px;margin:0 auto}
+.top{display:flex;gap:14px;align-items:center}
+.lcd{border:3px solid var(--line);font-size:56px;font-weight:700;min-width:116px;text-align:center;line-height:1.1;padding:4px 8px}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{flex:1;min-width:0}
+.row label{display:flex;align-items:center;gap:8px;flex:1}
+.beats{display:flex;gap:8px}
+.beats div{flex:1;height:34px;border:2px solid var(--line)}
+.beats div.on{background:var(--sel-bg)}
+.beats.off div.on{background:transparent}
+#go{min-height:54px;font-size:22px;font-weight:700;border-width:3px}
+#go.run{background:var(--sel-bg);color:var(--sel-fg)}
+</style>
+</head>
+<body>
+<div class="pad">
+ <div class="top"><div class="lcd" id="bpm" aria-live="off">96</div><div>beats per minute<br><b id="tname">Andante</b></div></div>
+ <input type="range" id="slider" min="30" max="240" step="1" aria-label="Tempo">
+ <div class="row">
+  <button data-d="-5">-5</button><button data-d="-1">-1</button><button data-d="1">+1</button><button data-d="5">+5</button>
+ </div>
+ <div class="beats" id="beats"></div>
+ <div class="row">
+  <label>Beats per bar
+   <select id="bars"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>7</option></select>
+  </label>
+  <button id="tap">Tap tempo</button>
+ </div>
+ <div class="row">
+  <label><input type="checkbox" id="vis" checked> Show beats</label>
+  <label>Volume <input type="range" id="vol" min="0" max="100" value="80" aria-label="Volume"></label>
+ </div>
+ <button id="go">Start</button>
+</div>
+<script src="../../core/app.js"></script>
+<script>
+'use strict';
+var $ = function (i) { return document.getElementById(i); };
+var S = { bpm: 96, beats: 4, vol: 80, vis: true };
+var ctx = null, timer = null, nextTime = 0, beat = 0, running = false;
+var played = 0, times = [];
+
+function tname(b) {
+  return b < 60 ? 'Largo' : b < 66 ? 'Larghetto' : b < 76 ? 'Adagio' : b < 108 ? 'Andante' : b < 120 ? 'Moderato' : b < 156 ? 'Allegro' : b < 176 ? 'Vivace' : 'Presto';
+}
+function persist() { Studio.set('metronome.settings', S).catch(function () {}); }
+function drawBeats() {
+  var box = $('beats'); box.textContent = '';
+  for (var i = 0; i < S.beats; i++) box.append(document.createElement('div'));
+  box.classList.toggle('off', !S.vis);
+}
+function show() {
+  $('bpm').textContent = S.bpm; $('slider').value = S.bpm; $('tname').textContent = tname(S.bpm);
+  $('bars').value = S.beats; $('vol').value = S.vol; $('vis').checked = S.vis;
+}
+function setBpm(v) { S.bpm = Math.max(30, Math.min(240, Math.round(v))); show(); persist(); }
+
+function click(t, accent) {
+  var o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'square'; o.frequency.value = accent ? 1500 : 1000;
+  var peak = Math.max(0.0001, (S.vol / 100) * 0.5);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + 0.003);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+  o.connect(g); g.connect(ctx.destination);
+  o.start(t); o.stop(t + 0.06);
+}
+function mark(i) {
+  var kids = $('beats').children;
+  for (var k = 0; k < kids.length; k++) kids[k].classList.toggle('on', k === i);
+}
+function sched() {
+  var ahead = document.hidden ? 1.5 : 0.15;
+  while (nextTime < ctx.currentTime + ahead) {
+    click(nextTime, beat === 0); played++; times.push(nextTime); if (times.length > 40) times.shift();
+    (function (b, delay) { setTimeout(function () { if (running) mark(b); }, Math.max(0, delay)); })(beat, (nextTime - ctx.currentTime) * 1000);
+    nextTime += 60 / S.bpm;
+    beat = (beat + 1) % S.beats;
+  }
+}
+function start() {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.resume) ctx.resume();
+  beat = 0; played = 0; nextTime = ctx.currentTime + 0.08; running = true;
+  timer = setInterval(sched, 25); sched();
+  $('go').textContent = 'Stop'; $('go').classList.add('run');
+}
+function stop() {
+  running = false; clearInterval(timer); timer = null; mark(-1);
+  $('go').textContent = 'Start'; $('go').classList.remove('run');
+}
+$('go').addEventListener('click', function () { running ? stop() : start(); });
+document.querySelectorAll('[data-d]').forEach(function (b) { b.addEventListener('click', function () { setBpm(S.bpm + Number(b.getAttribute('data-d'))); }); });
+$('slider').addEventListener('input', function () { setBpm(Number(this.value)); });
+$('bars').addEventListener('change', function () { S.beats = Number(this.value); drawBeats(); persist(); if (running) beat = 0; });
+$('vol').addEventListener('input', function () { S.vol = Number(this.value); persist(); });
+$('vis').addEventListener('change', function () { S.vis = this.checked; drawBeats(); persist(); });
+var taps = [];
+$('tap').addEventListener('click', function () {
+  var n = performance.now();
+  if (taps.length && n - taps[taps.length - 1] > 2000) taps = [];
+  taps.push(n); if (taps.length > 5) taps.shift();
+  if (taps.length >= 2) setBpm(60000 / ((taps[taps.length - 1] - taps[0]) / (taps.length - 1)));
+});
+document.addEventListener('keydown', function (e) {
+  if (e.code === 'Space' && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); $('go').click(); }
+});
+window.__met = { times: function () { return times.slice(); }, played: function () { return played; }, running: function () { return running; }, state: function () { return S; } };
+
+Studio.get('metronome.settings', null).then(function (v) { if (v) S = Object.assign(S, v); }).catch(function () {}).then(function () { show(); drawBeats(); });
+show(); drawBeats();
+</script>
+</body>
+</html>

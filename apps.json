@@ -1,0 +1,9 @@
+{
+  "version": "1.2.0",
+  "apps": [
+    { "id": "writer", "name": "Writer", "icon": "pencil", "entry": "apps/writer/index.html", "w": 560, "h": 440 },
+    { "id": "metronome", "name": "Metronome", "icon": "metronome", "entry": "apps/metronome/index.html", "w": 320, "h": 470 },
+    { "id": "practice", "name": "Practice log", "icon": "chart", "entry": "apps/practice/index.html", "w": 360, "h": 540 },
+    { "id": "charango", "name": "Charango", "icon": "charango", "entry": "apps/charango/index.html", "w": 400, "h": 520 }
+  ]
+}

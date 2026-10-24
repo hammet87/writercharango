@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Practice log</title>
+<link rel="stylesheet" href="../../core/theme.css">
+<style>
+body{overflow:auto}
+.pad{padding:12px;display:flex;flex-direction:column;gap:12px;max-width:520px;margin:0 auto}
+.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.box{border:2px solid var(--line);padding:6px 10px}
+.box small{display:block;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--dim)}
+.box b{font-size:22px}
+.chart{display:flex;align-items:flex-end;gap:6px;height:96px;border-bottom:2px solid var(--line)}
+.chart .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;position:relative}
+.chart .bar{background:var(--fg);min-height:3px}
+.chart .bar.today{background:var(--bg);border:2px solid var(--fg);border-bottom:0}
+.chart .v{font-size:11px;text-align:center;color:var(--dim)}
+.days{display:flex;gap:6px;font-size:13px;text-align:center}
+.days span{flex:1}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{min-width:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{min-height:36px;padding:0 10px}
+label{font-size:13px;color:var(--dim);display:block;margin-bottom:2px}
+h2{font-size:16px;margin:4px 0 0}
+.li{display:flex;justify-content:space-between;align-items:center;gap:8px;border-top:1px solid var(--line);padding:6px 0}
+.li:first-child{border-top:2px solid var(--line)}
+.li .m{flex:1;min-width:0}
+.li .n{font-size:13px;color:var(--dim)}
+.li button{min-height:32px;padding:0 10px}
+</style>
+</head>
+<body>
+<div class="pad">
+ <div class="stats">
+  <div class="box"><small>Last 7 days</small><b id="wk">0 min</b></div>
+  <div class="box"><small>Streak</small><b id="streak">0 days</b></div>
+ </div>
+ <div>
+  <div class="chart" id="chart"></div>
+  <div class="days" id="days"></div>
+ </div>
+
+ <h2>Log a session</h2>
+ <div class="row">
+  <div style="flex:1"><label for="date">Date</label><input type="date" id="date"></div>
+  <div style="flex:1"><label for="min">Minutes</label>
+   <div class="row"><button id="mm" aria-label="Minus 5 minutes">-5</button><input type="number" id="min" min="1" max="600" value="20" style="text-align:center"><button id="mp" aria-label="Plus 5 minutes">+5</button></div>
+  </div>
+ </div>
+ <div><label for="what">What did you practice?</label><input type="text" id="what" placeholder="Scales, a song, rasgueo..." autocomplete="off"></div>
+ <div class="chips" id="chips"></div>
+ <div><label for="note">Notes (optional)</label><input type="text" id="note" autocomplete="off"></div>
+ <button id="save" style="min-height:48px;border-width:3px;font-weight:700">Save session</button>
+ <div class="dim" id="msg" role="status"></div>
+
+ <h2>Sessions</h2>
+ <div id="list"></div>
+ <div class="row">
+  <button id="expcsv">Export CSV</button>
+  <button id="expjson">Export backup</button>
+  <button id="imp">Import backup</button>
+ </div>
+ <input type="file" id="file" accept=".json,application/json" hidden>
+</div>
+<script src="../../core/app.js"></script>
+<script>
+'use strict';
+var $ = function (i) { return document.getElementById(i); };
+var log = [];
+var TAGS = ['Scales', 'Chords', 'Rasgueo', 'Tremolo', 'Song', 'Repertoire'];
+function ymd(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function parse(s) { var p = s.split('-'); return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])); }
+function addDays(d, n) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); return x; }
+function today() { return new Date(); }
+function save() { return Studio.set('practice.log', log).catch(function () { $('msg').textContent = 'Could not save to this browser.'; }); }
+function minutesOn(day) { return log.filter(function (e) { return e.date === day; }).reduce(function (a, e) { return a + e.min; }, 0); }
+function streak() {
+  var d = today(), n = 0;
+  if (!minutesOn(ymd(d))) d = addDays(d, -1);
+  while (minutesOn(ymd(d)) > 0) { n++; d = addDays(d, -1); }
+  return n;
+}
+function fmt(m) { return m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m + ' min'; }
+function render() {
+  var t = today(), data = [], total = 0, mx = 1;
+  for (var i = 6; i >= 0; i--) { var d = addDays(t, -i), m = minutesOn(ymd(d)); data.push({ d: d, m: m, today: i === 0 }); total += m; mx = Math.max(mx, m); }
+  $('wk').textContent = fmt(total);
+  var s = streak(); $('streak').textContent = s + (s === 1 ? ' day' : ' days');
+  var ch = $('chart'), dy = $('days'); ch.textContent = ''; dy.textContent = '';
+  data.forEach(function (x) {
+    var col = document.createElement('div'); col.className = 'col';
+    var v = document.createElement('div'); v.className = 'v'; v.textContent = x.m ? x.m : '';
+    var b = document.createElement('div'); b.className = 'bar' + (x.today ? ' today' : ''); b.style.height = (x.m ? Math.max(4, Math.round(x.m / mx * 70)) : 3) + 'px';
+    b.setAttribute('data-min', x.m);
+    col.append(v, b); ch.append(col);
+    var sp = document.createElement('span'); sp.textContent = x.d.toLocaleDateString([], { weekday: 'narrow' }); dy.append(sp);
+  });
+  var list = $('list'); list.textContent = '';
+  var sorted = log.slice().sort(function (a, b) { return a.date === b.date ? b.id - a.id : (a.date < b.date ? 1 : -1); });
+  if (!sorted.length) { var e = document.createElement('div'); e.className = 'dim'; e.textContent = 'No sessions yet. Log your first one above.'; list.append(e); }
+  sorted.slice(0, 40).forEach(function (x) {
+    var row = document.createElement('div'); row.className = 'li';
+    var m = document.createElement('div'); m.className = 'm';
+    m.append(document.createTextNode(x.what || 'Practice'));
+    var n = document.createElement('div'); n.className = 'n';
+    n.textContent = parse(x.date).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' / ' + x.min + ' min' + (x.note ? ' / ' + x.note : '');
+    m.append(n);
+    var del = document.createElement('button'); del.textContent = 'Delete'; del.setAttribute('aria-label', 'Delete session ' + (x.what || ''));
+    del.addEventListener('click', function () {
+      if (!confirm('Delete this session?')) return;
+      log = log.filter(function (y) { return y.id !== x.id; });
+      Studio.get('practice.tomb', []).then(function (t) { t.push({ id: x.id, ts: Date.now() }); return Studio.set('practice.tomb', t); }).catch(function () {});
+      save(); render();
+    });
+    row.append(m, del); list.append(row);
+  });
+}
+TAGS.forEach(function (t) {
+  var b = document.createElement('button'); b.textContent = t;
+  b.addEventListener('click', function () { var w = $('what'); w.value = w.value ? (w.value.replace(/[, ]+$/, '') + ', ' + t) : t; });
+  $('chips').append(b);
+});
+$('mm').addEventListener('click', function () { $('min').value = Math.max(1, (Number($('min').value) || 0) - 5); });
+$('mp').addEventListener('click', function () { $('min').value = Math.min(600, (Number($('min').value) || 0) + 5); });
+$('save').addEventListener('click', function () {
+  var min = Math.round(Number($('min').value)), date = $('date').value;
+  if (!date) { $('msg').textContent = 'Choose a date.'; return; }
+  if (!(min >= 1 && min <= 600)) { $('msg').textContent = 'Enter minutes between 1 and 600.'; return; }
+  log.push({ id: Date.now() + Math.floor(Math.random() * 1000), date: date, min: min, what: $('what').value.trim(), note: $('note').value.trim() });
+  $('what').value = ''; $('note').value = '';
+  save().then(function () { $('msg').textContent = 'Saved.'; });
+  render();
+});
+$('expjson').addEventListener('click', function () { Studio.download('practice-log-' + ymd(today()) + '.json', JSON.stringify({ app: 'studio-practice', version: 1, log: log }, null, 1), 'application/json'); });
+$('expcsv').addEventListener('click', function () {
+  var q = function (s) { return '"' + String(s || '').replace(/"/g, '""') + '"'; };
+  var rows = ['date,minutes,what,notes'].concat(log.slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; }).map(function (x) { return [x.date, x.min, q(x.what), q(x.note)].join(','); }));
+  Studio.download('practice-log-' + ymd(today()) + '.csv', rows.join('\n'), 'text/csv');
+});
+$('imp').addEventListener('click', function () { $('file').click(); });
+$('file').addEventListener('change', function () {
+  var f = this.files[0]; this.value = ''; if (!f) return;
+  f.text().then(function (t) {
+    var j = JSON.parse(t); if (j.app !== 'studio-practice' || !Array.isArray(j.log)) throw new Error('This is not a Practice log backup.');
+    var ids = {}; log.forEach(function (x) { ids[x.id] = 1; }); var n = 0;
+    j.log.forEach(function (x) { if (!ids[x.id] && x.date && x.min) { log.push(x); n++; } });
+    save(); render(); $('msg').textContent = 'Imported ' + n + ' sessions.';
+  }).catch(function (e) { $('msg').textContent = 'Import failed: ' + e.message; });
+});
+$('date').value = ymd(today());
+window.addEventListener('focus', function () { if (!$('date').value) $('date').value = ymd(today()); });
+Studio.get('practice.log', []).then(function (v) { log = v || []; render(); }).catch(function () { render(); });
+Studio.onChange(function (keys) {
+  if (keys.indexOf('practice.log') >= 0) Studio.get('practice.log', []).then(function (v) { log = v || []; render(); });
+});
+render();
+</script>
+</body>
+</html>
